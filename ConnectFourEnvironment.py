@@ -43,27 +43,34 @@ class ConnectFourEnvironment:
         return np.copy(self.__grid__), winner, terminated
 
     def __detect_termination__(self):
-        grid = self.__grid__
+        def rolling_window(arr, start_idx, end_idx, size):
+            for i in range(end_idx + 1 - start_idx - size):
+                for row in arr:
+                    yield row[start_idx + i:size + i]
+
         for i in range(2):
+            grid = self.__grid__
             if i == 1:
-                # check columns
                 grid = np.rot90(grid)
 
-            for j in range(grid.shape[1]):
-                shifted_cols = np.roll(grid, j, axis=1)
-                windows = shifted_cols[:, :4]
-                for window in windows:
+            gen = rolling_window(grid, 0, grid.shape[1], 4)
+
+            while True:
+                try:
+                    window = next(gen)
                     unique = np.unique(window)
                     if len(unique) == 1:
                         if unique == 1.:
                             print("P1 won.")
-                            return 5
+                            return 5.
                         elif unique == 2.:
                             print("P2 won.")
-                            return -5
+                            return -5.
+                except StopIteration:
+                    break
 
-        if np.all(self.__grid__ != 0.):
-            print("Draw")
+        if np.all(self.__grid__ != 0):
+            print("Draw.")
             return -1
 
         return 0
