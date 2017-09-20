@@ -8,5 +8,5 @@ while True:
     env.render()
     while not terminated:
         a = int(input("Choose the column (0-6): "))
-        s_prime, reward_terminated = env.step(a)
+        s_prime, reward, terminated = env.step(a)
         env.render()
