@@ -48,6 +48,12 @@ class ConnectFourEnvironment:
                 for row in arr:
                     yield row[start_idx + i:size + i]
 
+        def rolling_square(arr, start_x, end_x, start_y, end_y, size):
+            for i in range(end_x + 1 - start_x - size):
+                for j in range(end_y + 1 - start_y - size):
+                    yield arr[start_x + i:size + i, start_y + j:size + j]
+
+        # detect column-wise and row-wise
         for i in range(2):
             grid = self.__grid__
             if i == 1:
@@ -65,6 +71,28 @@ class ConnectFourEnvironment:
                             return 5.
                         elif unique == 2.:
                             print("P2 won.")
+                            return -5.
+                except StopIteration:
+                    break
+
+        # detect diagonals
+        for i in range(2):
+            grid = self.__grid__
+            if i == 1:
+                grid = np.rot90(grid)
+
+            gen = rolling_square(grid, 0, grid.shape[0], 0, grid.shape[1], 4)
+
+            while True:
+                try:
+                    window = next(gen)
+                    unique = np.unique(np.diag(window))
+                    if len(unique) == 1:
+                        if unique == 1.:
+                            print("P1 won!")
+                            return 5.
+                        elif unique == 2.:
+                            print("P2 won!")
                             return -5.
                 except StopIteration:
                     break
