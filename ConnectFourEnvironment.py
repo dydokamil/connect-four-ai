@@ -24,6 +24,9 @@ class ConnectFourEnvironment:
         self.__needs_reset__ = False
         return np.copy(self.__grid__)
 
+    def get_state(self):
+        return np.copy(self.__grid__)
+
     def step(self, action):
         if self.__needs_reset__:
             raise RuntimeError("Call reset function first.")
@@ -31,6 +34,9 @@ class ConnectFourEnvironment:
             free_rows = np.where(self.__grid__[:, action] == 0)[0]
             lowest_row = free_rows[-1]
             self.__grid__[lowest_row, action] = 1 if self.__reds_turn__ else 2
+        else:  # prohibited move
+            self.__needs_reset__ = True
+            return np.copy(self.__grid__), -500, True
 
         self.__reds_turn__ = not self.__reds_turn__
         winner = self.__detect_termination__()
@@ -41,6 +47,9 @@ class ConnectFourEnvironment:
             terminated = True
 
         return np.copy(self.__grid__), winner, terminated
+
+    def is_finished(self):
+        return self.__needs_reset__
 
     def __detect_termination__(self):
         def rolling_window(arr, start_idx, end_idx, size):
