@@ -7,6 +7,7 @@ import tensorflow as tf
 
 from A3CNetwork import A3CNetwork
 from ConnectFourEnvironment import ConnectFourEnvironment
+from EnvironmentManager import EnvironmentManager
 from Worker import Worker
 
 max_episode_length = 6 * 7
@@ -26,12 +27,17 @@ with tf.device('/cpu:0'):
                                   trainable=False)
     trainer = tf.train.AdamOptimizer(learning_rate=1e-4)
 
-    master_network = A3CNetwork(s_size, a_size, 'global', None)
+    master_network_yellow = A3CNetwork(s_size, a_size, 'global_yellow', None)
+    master_network_red = A3CNetwork(s_size, a_size, 'global_red', None)
     num_workers = multiprocessing.cpu_count()
-    workers = []
-    for i in range(num_workers):
-        workers.append(Worker(ConnectFourEnvironment(), i, s_size, a_size,
-                              trainer, model_path, global_episodes))
+    managers = []
+    workers = [Worker(i, s_size, a_size, trainer, model_path, global_episodes)
+               for i in range(num_workers)]
+    for i in range(0, num_workers, 2):
+        managers.append(EnvironmentManager(ConnectFourEnvironment(),
+                                           workers[i],
+                                           workers[i + 1]))
+
     saver = tf.train.Saver(max_to_keep=5)
 
 with tf.Session() as sess:
@@ -44,13 +50,13 @@ with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
 
     worker_threads = []
-    for worker in workers:
-        worker_work = lambda: worker.work(max_episode_length,
-                                          gamma,
-                                          sess,
-                                          coord,
-                                          saver)
-        t = threading.Thread(target=(worker_work))
+    for manager in managers:
+        manager_work = lambda: manager.work(max_episode_length,
+                                            gamma,
+                                            sess,
+                                            coord,
+                                            saver)
+        t = threading.Thread(target=(manager_work))
         t.start()
         sleep(.5)
         worker_threads.append(t)

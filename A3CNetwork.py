@@ -50,7 +50,7 @@ class A3CNetwork:
                                               activation_fn=None)
 
             # if worker then functions for gradient updating
-            if scope != 'global':
+            if not 'global' in scope:
                 self.actions = tf.placeholder(shape=[None],
                                               dtype=tf.int32)
                 self.actions_oh = tf.one_hot(self.actions, a_size,
@@ -80,7 +80,10 @@ class A3CNetwork:
                 self.var_norms = tf.global_norm(local_vars)
                 grads, self.grad_norms = \
                     tf.clip_by_global_norm(self.gradients, 40.)
+                global_collection = ('global_yellow'
+                                     if int(scope[-1]) % 2 == 0
+                                     else 'global_red')
                 global_vars = tf.get_collection(
-                    tf.GraphKeys.TRAINABLE_VARIABLES, 'global')
+                    tf.GraphKeys.TRAINABLE_VARIABLES, global_collection)
                 self.apply_grads = \
                     trainer.apply_gradients(zip(grads, global_vars))

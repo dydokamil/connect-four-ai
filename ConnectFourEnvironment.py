@@ -5,7 +5,8 @@ class ConnectFourEnvironment:
     def __init__(self):
         self.__grid__ = np.zeros((6, 7))
         self.__needs_reset__ = True
-        self.__reds_turn__ = True
+        self.__yellows_turn__ = True
+        self.__reward__ = 0
 
     def render(self):
         for row in self.__grid__:
@@ -21,11 +22,26 @@ class ConnectFourEnvironment:
             print()
 
     def reset(self):
+        if self.__reward__ != 0:
+            raise RuntimeError("Call get_reward function first.")
         self.__needs_reset__ = False
         return np.copy(self.__grid__)
 
+    def yellows_turn(self):
+        return self.__yellows_turn__
+
+    def get_random_action(self):
+        if not self.__needs_reset__:
+            free_cols = np.unique(np.where(self.__grid__ == 0)[1])
+            return np.random.choice(free_cols)
+
     def get_state(self):
         return np.copy(self.__grid__)
+
+    def get_reward(self):
+        r = self.__reward__
+        self.__reward__ = 0
+        return r
 
     def step(self, action):
         if self.__needs_reset__:
@@ -33,20 +49,20 @@ class ConnectFourEnvironment:
         if np.any(self.__grid__[:, action] == 0):
             free_rows = np.where(self.__grid__[:, action] == 0)[0]
             lowest_row = free_rows[-1]
-            self.__grid__[lowest_row, action] = 1 if self.__reds_turn__ else 2
+            self.__grid__[lowest_row, action] = \
+                1 if self.__yellows_turn__ else 2
         else:  # prohibited move
             self.__needs_reset__ = True
-            return np.copy(self.__grid__), -500, True
-
-        self.__reds_turn__ = not self.__reds_turn__
-        winner = self.__detect_termination__()
-
-        terminated = False
-        if winner != 0:
+            print("Move prohibited!")
+            self.__reward__ = -500
             self.__needs_reset__ = True
-            terminated = True
 
-        return np.copy(self.__grid__), winner, terminated
+        self.__yellows_turn__ = not self.__yellows_turn__
+        if self.__reward__ == 0:
+            self.__reward__ = self.__detect_termination__()
+
+        if self.__reward__ != 0:
+            self.__needs_reset__ = True
 
     def is_finished(self):
         return self.__needs_reset__
@@ -98,10 +114,10 @@ class ConnectFourEnvironment:
                     unique = np.unique(np.diag(window))
                     if len(unique) == 1:
                         if unique == 1.:
-                            print("P1 won!")
+                            print("P1 won.")
                             return 5.
                         elif unique == 2.:
-                            print("P2 won!")
+                            print("P2 won.")
                             return -5.
                 except StopIteration:
                     break
