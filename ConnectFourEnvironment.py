@@ -2,11 +2,12 @@ import numpy as np
 
 
 class ConnectFourEnvironment:
-    def __init__(self):
+    def __init__(self, play_with_rng=True):
         self.__grid__ = np.zeros((6, 7))
         self.__needs_reset__ = True
         self.__yellows_turn__ = True
         self.__reward__ = 0
+        self.__play_with_rng__ = play_with_rng
 
     def render(self):
         for row in self.__grid__:
@@ -20,12 +21,14 @@ class ConnectFourEnvironment:
                 element = '#' if element == 0.0 else element
                 print(element, '', end='')
             print()
+        print()
 
     def reset(self):
-        if self.__reward__ != 0:
-            raise RuntimeError("Call get_reward function first.")
+        self.__reward__ = 0
         self.__needs_reset__ = False
-        return np.copy(self.__grid__)
+        self.__grid__ = np.zeros((6, 7))
+        self.__yellows_turn__ = True
+        return np.copy(self.__grid__).flatten()
 
     def yellows_turn(self):
         return self.__yellows_turn__
@@ -38,14 +41,10 @@ class ConnectFourEnvironment:
     def get_state(self):
         return np.copy(self.__grid__)
 
-    def get_reward(self):
-        r = self.__reward__
-        self.__reward__ = 0
-        return r
-
     def step(self, action):
         if self.__needs_reset__:
             raise RuntimeError("Call reset function first.")
+
         if np.any(self.__grid__[:, action] == 0):
             free_rows = np.where(self.__grid__[:, action] == 0)[0]
             lowest_row = free_rows[-1]
@@ -54,15 +53,25 @@ class ConnectFourEnvironment:
         else:  # prohibited move
             self.__needs_reset__ = True
             print("Move prohibited!")
-            self.__reward__ = -500
+            if self.yellows_turn():
+                print("What a jerk this bot is!")
+            self.__reward__ = -6 if self.yellows_turn() else 0
             self.__needs_reset__ = True
 
         self.__yellows_turn__ = not self.__yellows_turn__
+
+        if self.__play_with_rng__ \
+                and not self.yellows_turn() \
+                and not self.is_finished():
+            self.step(self.get_random_action())
+
         if self.__reward__ == 0:
             self.__reward__ = self.__detect_termination__()
 
         if self.__reward__ != 0:
             self.__needs_reset__ = True
+
+        return self.get_state().flatten(), self.__reward__, self.is_finished()
 
     def is_finished(self):
         return self.__needs_reset__
