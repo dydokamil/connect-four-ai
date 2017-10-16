@@ -41,6 +41,10 @@ class ConnectFourEnvironment:
     def get_state(self):
         return np.copy(self.__grid__)
 
+    def can_move(self, action):
+        if np.any(self.__grid__[:, action] == 0):
+            return True
+
     def step(self, action):
         if self.__needs_reset__:
             raise RuntimeError("Call reset function first.")

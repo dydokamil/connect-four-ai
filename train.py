@@ -47,6 +47,8 @@ class Worker:
         self.episode_rewards = []
         self.episode_lengths = []
         self.episode_mean_values = []
+        self.total_episodes = 0
+        self.won = 0
 
         # Create the local copy of the network and the TensorFlow op
         # to copy global parameters to local network
@@ -120,7 +122,11 @@ class Worker:
                                    self.local_AC.state_in[1]: rnn_state[1]})
                     a = np.random.choice(a_dist[0], p=a_dist[0])
                     a = np.argmax(a == a_dist)
-                    # a = np.where(a_dist == a)
+                    if not self.env.can_move(a):
+                        while True:
+                            a = np.random.randint(0, a_size)
+                            if self.env.can_move(a):
+                                break
 
                     s1, r, d, = self.env.step(a)
 
@@ -156,6 +162,14 @@ class Worker:
                         sess.run(self.update_local_ops)
                     if d:
                         break
+
+                self.total_episodes += 1
+                if episode_reward > 0:
+                    self.won += 1
+
+                if self.total_episodes % 100 == 0:
+                    print(f'Won {self.won}/100')
+                    self.won = 0
 
                 self.episode_rewards.append(episode_reward)
                 # self.episode_lengths.append(episode_step_count)

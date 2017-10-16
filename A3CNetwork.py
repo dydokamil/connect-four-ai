@@ -13,11 +13,28 @@ class A3CNetwork:
         with tf.variable_scope(scope):
             self.inputs = tf.placeholder(shape=[None, s_size],
                                          dtype=tf.float32, name='inputs')
+            self.inputs_rect = tf.reshape(self.inputs, shape=[-1, 6, 7, 1])
             # self.imageIn = tf.reshape(self.inputs, shape=[-1, 6, 7])
 
-            W_h1 = weight_variable('W_h1', [s_size, 200])
+            W_conv1 = weight_variable('W_conv1', [2, 2, 1, 64])
+            b_conv1 = weight_variable('b_conv1', [64])
+            h_conv1 = tf.nn.conv2d(self.inputs_rect,
+                                   W_conv1,
+                                   [1, 1, 1, 1],
+                                   padding='VALID') + b_conv1
+
+            W_conv2 = weight_variable('W_conv2', [2, 2, 64, 64])
+            b_conv2 = weight_variable('b_conv2', [64])
+            h_conv2 = tf.nn.conv2d(h_conv1,
+                                   W_conv2,
+                                   [1, 1, 1, 1],
+                                   padding='VALID') + b_conv2
+
+            h_conv2_flattened = tf.reshape(h_conv2, [-1, 4 * 5 * 64])
+
+            W_h1 = weight_variable('W_h1', [4 * 5 * 64, 200])
             b_h1 = weight_variable('b_h1', [200])
-            hidden1 = tf.nn.elu(tf.matmul(self.inputs, W_h1) + b_h1)
+            hidden1 = tf.nn.elu(tf.matmul(h_conv2_flattened, W_h1) + b_h1)
 
             W_h2 = weight_variable('W_h2', [200, 128])
             b_h2 = weight_variable('b_h2', [128])
@@ -34,7 +51,7 @@ class A3CNetwork:
                                   name='h_in')
             self.state_in = (c_in, h_in)
             rnn_in = tf.expand_dims(hidden2, [0])
-            step_size = tf.shape(self.inputs)[:1]
+            step_size = tf.shape(self.inputs_rect)[:1]
             state_in = tf.contrib.rnn.LSTMStateTuple(c_in, h_in)
             lstm_outputs, lstm_state = tf.nn.dynamic_rnn(
                 lstm_cell, rnn_in, initial_state=state_in,
