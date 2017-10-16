@@ -53,8 +53,6 @@ class ConnectFourEnvironment:
         else:  # prohibited move
             self.__needs_reset__ = True
             print("Move prohibited!")
-            if self.yellows_turn():
-                print("What a jerk this bot is!")
             self.__reward__ = -6 if self.yellows_turn() else 0
             self.__needs_reset__ = True
 
@@ -101,10 +99,10 @@ class ConnectFourEnvironment:
                     unique = np.unique(window)
                     if len(unique) == 1:
                         if unique == 1.:
-                            print("P1 won.")
+                            # print("P1 won.")
                             return 5.
                         elif unique == 2.:
-                            print("P2 won.")
+                            # print("P2 won.")
                             return -5.
                 except StopIteration:
                     break
@@ -123,10 +121,10 @@ class ConnectFourEnvironment:
                     unique = np.unique(np.diag(window))
                     if len(unique) == 1:
                         if unique == 1.:
-                            print("P1 won.")
+                            # print("P1 won.")
                             return 5.
                         elif unique == 2.:
-                            print("P2 won.")
+                            # print("P2 won.")
                             return -5.
                 except StopIteration:
                     break
