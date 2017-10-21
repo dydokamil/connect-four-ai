@@ -31,6 +31,7 @@ with tf.Session() as sess:
                     feed_dict={model.inputs: [s],
                                model.state_in[0]: rnn_state[0],
                                model.state_in[1]: rnn_state[1]})
+                print("Policy:", a_dist)
                 a = np.random.choice(a_dist[0], p=a_dist[0])
                 a = np.argmax(a == a_dist)
             else:

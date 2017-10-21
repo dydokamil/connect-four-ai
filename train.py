@@ -1,7 +1,6 @@
 # coding: utf-8
 
 # Credit: https://github.com/awjuliani/DeepRL-Agents/blob/master/A3C-Doom.ipynb
-
 import multiprocessing
 import os
 import threading
@@ -85,8 +84,9 @@ class Worker:
                      self.local_AC.state_in[0]: self.batch_rnn_state[0],
                      self.local_AC.state_in[1]: self.batch_rnn_state[1]}
         # with tf.device('/gpu:0'):
-        v_l, p_l, e_l, g_n, v_n, self.batch_rnn_state, _ = sess.run(
-            [self.local_AC.value_loss,
+        l_l, v_l, p_l, e_l, g_n, v_n, self.batch_rnn_state, _ = sess.run(
+            [self.local_AC.loss,
+             self.local_AC.value_loss,
              self.local_AC.policy_loss,
              self.local_AC.entropy,
              self.local_AC.grad_norms,
@@ -94,6 +94,7 @@ class Worker:
              self.local_AC.state_out,
              self.local_AC.apply_grads],
             feed_dict=feed_dict)
+        # print("Loss:", l_l)
 
     def work(self, max_episode_length, gamma, sess, coord, saver):
         episode_count = sess.run(self.global_episodes)
@@ -115,22 +116,19 @@ class Worker:
                     # Take an action using probabilities
                     # from policy network output.
                     a_dist, v, rnn_state = sess.run(
-                        [self.local_AC.policy, self.local_AC.value,
+                        [self.local_AC.policy,
+                         self.local_AC.value,
                          self.local_AC.state_out],
                         feed_dict={self.local_AC.inputs: [s],
                                    self.local_AC.state_in[0]: rnn_state[0],
                                    self.local_AC.state_in[1]: rnn_state[1]})
+                    # print(a_dist)
                     a = np.random.choice(a_dist[0], p=a_dist[0])
                     a = np.argmax(a == a_dist)
-                    if not self.env.can_move(a):
-                        while True:
-                            a = np.random.randint(0, a_size)
-                            if self.env.can_move(a):
-                                break
 
                     s1, r, d, = self.env.step(a)
 
-                    # r /= 100.
+                    r /= 100.
 
                     if d:
                         s1 = s
@@ -213,8 +211,11 @@ if __name__ == '__main__':
 
     tf.reset_default_graph()
 
+    load_model = False
     if not os.path.exists(model_path):
         os.makedirs(model_path)
+    else:
+        load_model = True
 
     with tf.device("/cpu:0"):
         global_episodes = tf.Variable(0, dtype=tf.int32,
@@ -225,6 +226,7 @@ if __name__ == '__main__':
         master_network = A3CNetwork(s_size, a_size, 'global', None)
         # Set workers ot number of available CPU threads
         num_workers = multiprocessing.cpu_count()
+        # num_workers = 1
         workers = []
         # Create worker classes
         for i in range(num_workers):
@@ -234,8 +236,14 @@ if __name__ == '__main__':
         saver = tf.train.Saver(max_to_keep=5)
 
     with tf.Session() as sess:
+        if load_model:
+            print("Loading saved model.")
+            saver = tf.train.Saver()
+            latest_checkpoint = tf.train.latest_checkpoint(model_path)
+            sess.run(tf.global_variables_initializer())
+            saver.restore(sess, latest_checkpoint)
+
         coord = tf.train.Coordinator()
-        sess.run(tf.global_variables_initializer())
 
         # This is where the asynchronous magic happens.
         # Start the "work" process for each worker in a separate threat.

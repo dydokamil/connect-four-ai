@@ -8,6 +8,8 @@ class ConnectFourEnvironment:
         self.__yellows_turn__ = True
         self.__reward__ = 0
         self.__play_with_rng__ = play_with_rng
+        self.move_penalty = -0.05
+        self.prohibited_penalty = -60.
 
     def render(self):
         for row in self.__grid__:
@@ -57,7 +59,7 @@ class ConnectFourEnvironment:
         else:  # prohibited move
             self.__needs_reset__ = True
             print("Move prohibited!")
-            self.__reward__ = -6 if self.yellows_turn() else 0
+            self.__reward__ = -60 if self.yellows_turn() else 0
             self.__needs_reset__ = True
 
         self.__yellows_turn__ = not self.__yellows_turn__
@@ -67,10 +69,10 @@ class ConnectFourEnvironment:
                 and not self.is_finished():
             self.step(self.get_random_action())
 
-        if self.__reward__ == 0:
+        if not self.__reward__ == self.prohibited_penalty:
             self.__reward__ = self.__detect_termination__()
 
-        if self.__reward__ != 0:
+        if self.__reward__ != self.move_penalty:
             self.__needs_reset__ = True
 
         return self.get_state().flatten(), self.__reward__, self.is_finished()
@@ -137,4 +139,4 @@ class ConnectFourEnvironment:
             print("Draw.")
             return -1
 
-        return 0
+        return -0.05
