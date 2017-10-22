@@ -75,7 +75,12 @@ class ConnectFourEnvironment:
         if self.__reward__ != self.move_penalty:
             self.__needs_reset__ = True
 
-        return self.get_state().flatten(), self.__reward__, self.is_finished()
+        info = None
+        if self.__reward__ == self.prohibited_penalty:
+            info = 'prohibited'
+
+        return (self.get_state().flatten(),
+                self.__reward__, self.is_finished(), info)
 
     def is_finished(self):
         return self.__needs_reset__

@@ -7,30 +7,15 @@ import threading
 from time import sleep
 
 import numpy as np
-import scipy.signal
 import tensorflow as tf
 
 from A3CNetwork import A3CNetwork
 # ### Helper Functions
 # Copies one set of variables to another.
 # Used to set worker network parameters to those of global network.
-from ConnectFourEnvironment import ConnectFourEnvironment
-from common import s_size, a_size
-
-
-def update_target_graph(from_scope, to_scope):
-    from_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, from_scope)
-    to_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, to_scope)
-
-    op_holder = []
-    for from_var, to_var in zip(from_vars, to_vars):
-        op_holder.append(to_var.assign(from_var))
-    return op_holder
-
-
-# Discounting function used to calculate discounted returns.
-def discount(x, gamma):
-    return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
+from Agent import Agent
+from EnvironmentManager import EnvironmentManager
+from common import s_size, a_size, discount, update_target_graph
 
 
 # ### Worker Agent
@@ -54,7 +39,7 @@ class Worker:
         self.local_AC = A3CNetwork(s_size, a_size, self.name, trainer)
         self.update_local_ops = update_target_graph('global', self.name)
 
-        self.actions = self.actions = np.identity(a_size, dtype=bool).tolist()
+        self.actions = np.identity(a_size, dtype=bool).tolist()
         self.env = game
 
     def train(self, rollout, sess, gamma, bootstrap_value):
@@ -83,22 +68,18 @@ class Worker:
                      self.local_AC.advantages: advantages,
                      self.local_AC.state_in[0]: self.batch_rnn_state[0],
                      self.local_AC.state_in[1]: self.batch_rnn_state[1]}
-        # with tf.device('/gpu:0'):
-        l_l, v_l, p_l, e_l, g_n, v_n, self.batch_rnn_state, _ = sess.run(
-            [self.local_AC.loss,
-             self.local_AC.value_loss,
-             self.local_AC.policy_loss,
-             self.local_AC.entropy,
-             self.local_AC.grad_norms,
-             self.local_AC.var_norms,
-             self.local_AC.state_out,
-             self.local_AC.apply_grads],
+        sess.run([  # self.local_AC.loss,
+            # self.local_AC.value_loss,
+            # self.local_AC.policy_loss,
+            # self.local_AC.entropy,
+            self.local_AC.grad_norms,
+            self.local_AC.var_norms,
+            self.local_AC.state_out,
+            self.local_AC.apply_grads],
             feed_dict=feed_dict)
-        # print("Loss:", l_l)
 
     def work(self, max_episode_length, gamma, sess, coord, saver):
         episode_count = sess.run(self.global_episodes)
-        total_steps = 0
         print("Starting worker " + str(self.number))
         with sess.as_default(), sess.graph.as_default():
             while not coord.should_stop():
@@ -106,7 +87,6 @@ class Worker:
                 episode_buffer = []
                 episode_values = []
                 episode_reward = 0
-                episode_step_count = 0
 
                 s = self.env.reset()
                 rnn_state = self.local_AC.state_init
@@ -126,7 +106,7 @@ class Worker:
                     a = np.random.choice(a_dist[0], p=a_dist[0])
                     a = np.argmax(a == a_dist)
 
-                    s1, r, d, = self.env.step(a)
+                    s1, r, d = self.env.step(a)
 
                     r /= 100.
 
@@ -138,28 +118,6 @@ class Worker:
 
                     episode_reward += r
                     s = s1
-                    total_steps += 1
-                    episode_step_count += 1
-
-                    # If the episode hasn't ended,
-                    # but the experience buffer is full, then we make an update
-                    # step using that experience rollout.
-                    if len(episode_buffer) == 30 \
-                            and not d \
-                            and episode_step_count != max_episode_length - 1:
-                        # Since we don't know what the true final return is,
-                        # we "bootstrap" from our current
-                        # value estimation.
-                        feed_dict = {self.local_AC.inputs: [s],
-                                     self.local_AC.state_in[0]: rnn_state[0],
-                                     self.local_AC.state_in[1]: rnn_state[1]}
-                        v1 = sess.run(self.local_AC.value,
-                                      feed_dict=feed_dict)[0, 0]
-                        self.train(episode_buffer, sess, gamma, v1)
-                        episode_buffer = []
-                        sess.run(self.update_local_ops)
-                    if d:
-                        break
 
                 self.total_episodes += 1
                 if episode_reward > 0:
@@ -187,13 +145,6 @@ class Worker:
 
                     mean_reward = np.mean(self.episode_rewards[-5:])
 
-                    # if mean_reward >= MAX_REWARD * .99:
-                    #     saver.save(sess, self.model_path + '/model-' + str(
-                    #         episode_count) + '.ckpt')
-                    #     print("Saved Model")
-                    #
-                    #     coord.request_stop()  # STOP
-
                     print("Mean reward:", mean_reward)
                     # mean_length = np.mean(self.episode_lengths[-5:])
                     # mean_value = np.mean(self.episode_mean_values[-5:])
@@ -206,14 +157,19 @@ class Worker:
 if __name__ == '__main__':
     max_episode_length = s_size
     gamma = .99  # discount rate for advantage estimation and reward
-    model_path = './model'
-    MAX_REWARD = 5.
+    model_yellow = './model_yellow'
+    model_red = './model_red'
 
     tf.reset_default_graph()
 
     load_model = False
-    if not os.path.exists(model_path):
-        os.makedirs(model_path)
+    if not os.path.exists(model_yellow):
+        os.makedirs(model_yellow)
+    else:
+        load_model = True
+
+    if not os.path.exists(model_red):
+        os.makedirs(model_red)
     else:
         load_model = True
 
@@ -221,41 +177,80 @@ if __name__ == '__main__':
         global_episodes = tf.Variable(0, dtype=tf.int32,
                                       name='global_episodes',
                                       trainable=False)
-        trainer = tf.train.AdamOptimizer()
+        common_session = tf.Session()
+        yellow_session = tf.Session()
+        red_session = tf.Session()
+
         # Generate global network
-        master_network = A3CNetwork(s_size, a_size, 'global', None)
+        with yellow_session:
+            trainer_yellow = tf.train.AdamOptimizer('yellow_adam')
+            master_network_yellow = A3CNetwork(s_size, a_size,
+                                               'global', trainer_yellow)
+        with red_session:
+            trainer_red = tf.train.AdamOptimizer('red_adam')
+            master_network_red = A3CNetwork(s_size, a_size,
+                                            'global', trainer_red)
+
         # Set workers ot number of available CPU threads
         num_workers = multiprocessing.cpu_count()
-        # num_workers = 1
-        workers = []
-        # Create worker classes
+        assert num_workers % 2 == 0
+
+        managers = []
+        with common_session:
+            saver = tf.train.Saver(max_to_keep=5)
+
         for i in range(num_workers):
-            workers.append(
-                Worker(ConnectFourEnvironment(), i, s_size, a_size, trainer,
-                       model_path, global_episodes))
-        saver = tf.train.Saver(max_to_keep=5)
+            num = 0
+            agent1 = Agent(num,
+                           yellow_session,
+                           saver,
+                           trainer_yellow)
+            agent2 = Agent(num + 1,
+                           red_session,
+                           saver,
+                           trainer_red)
+            num += 2
+            managers.append(
+                EnvironmentManager(agent1, agent2, common_session, coord)
+            )
 
-    with tf.Session() as sess:
-        if load_model:
-            print("Loading saved model.")
-            saver = tf.train.Saver()
-            latest_checkpoint = tf.train.latest_checkpoint(model_path)
-            sess.run(tf.global_variables_initializer())
-            saver.restore(sess, latest_checkpoint)
+        with common_session:
+            common_session.run(tf.global_variables_initializer())
+            coord = tf.train.Coordinator()
 
-        coord = tf.train.Coordinator()
-
-        # This is where the asynchronous magic happens.
-        # Start the "work" process for each worker in a separate threat.
-        worker_threads = []
-
-        for worker in workers:
-            def worker_work(): worker.work(max_episode_length, gamma,
-                                           sess, coord, saver)
-
+            worker_threads = []
+            for worker in managers:
+                def worker_work(): worker.work(0, gamma, common_session,
+                                               coord, saver)
 
             t = threading.Thread(target=worker_work)
             t.start()
-            sleep(0.5)
+            sleep(.5)
             worker_threads.append(t)
         coord.join(worker_threads)
+
+
+        # with tf.Session() as sess:
+        #     if load_model:
+        #         print("Loading saved model.")
+        #         saver = tf.train.Saver()
+        #         latest_checkpoint = tf.train.latest_checkpoint(model_path)
+        #         sess.run(tf.global_variables_initializer())
+        #         saver.restore(sess, latest_checkpoint)
+        #
+        #     coord = tf.train.Coordinator()
+        #
+        #     # This is where the asynchronous magic happens.
+        #     # Start the "work" process for each worker in a separate threat.
+        #     worker_threads = []
+        #
+        #     for worker in workers:
+        #         def worker_work(): worker.work(max_episode_length, gamma,
+        #                                        sess, coord, saver)
+        #
+        #
+        #         t = threading.Thread(target=worker_work)
+        #         t.start()
+        #         sleep(0.5)
+        #         worker_threads.append(t)
+        #     coord.join(worker_threads)
