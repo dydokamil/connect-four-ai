@@ -24,7 +24,7 @@ class Net(nn.Module):
 
         return self.policy, self.value, self.entropy
 
-    def loss(self, discounted_rewards, actions, advantages):
+    def compute_loss(self, discounted_rewards, actions, advantages):
         self.actions_oh = Variable(torch.from_numpy(
             one_hot_encode(actions, a_size).astype(np.float32))).t()
         self.responsible_outputs = torch.sum(torch.matmul(self.policy,

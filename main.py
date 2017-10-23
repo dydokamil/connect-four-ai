@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 import threading
 import time
@@ -34,8 +35,8 @@ if __name__ == '__main__':
     yellow_optim = optim.Adam(yellow_network.parameters())
     red_optim = optim.Adam(red_network.parameters())
 
+    num = 0
     for i in range(num_workers):
-        num = 0
         agent1 = Agent(num, yellow_network, yellow_optim)
         agent2 = Agent(num + 1, red_network, red_optim)
         num += 2

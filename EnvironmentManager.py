@@ -18,11 +18,10 @@ class EnvironmentManager:
         print(f"Starting environment with agents {self.agent1.name} "
               f"and {self.agent2.name}")
         while not self.request_stop:
-            s = self.environment.reset()
+            self.environment.reset()
+            if self.global_episode_count % 1000 == 999:
+                self.environment.render()
             d = False
-
-            # self.agent1.reset()
-            # self.agent2.reset()
 
             while not d:
                 if self.environment.yellows_turn():
@@ -30,6 +29,7 @@ class EnvironmentManager:
                 else:
                     agent = self.agent2
 
+                s = self.environment.get_state().flatten()
                 s_variable = Variable(torch.from_numpy(s)).float().unsqueeze(0)
                 policy, v, e = agent.choose_action(s_variable)
                 # v = v.data.numpy().squeeze()
@@ -37,6 +37,10 @@ class EnvironmentManager:
                 a = np.random.choice(policy, p=policy)
                 a = np.argmax(policy == a)
                 s1, r, d, info = self.environment.step(a)
+
+                if self.global_episode_count % 1000 == 999:
+                    self.environment.render()
+
                 r /= 100.
                 if d:
                     s1 = s
@@ -48,8 +52,5 @@ class EnvironmentManager:
             self.agent1.train(gamma=.99)
             self.agent2.train(gamma=.99)
 
-            # if self.global_episode_count % 250 == 0:
-            #     if self.agent1.name == 'agent0':
-            #         self.agent1.save_model(self.global_episode_count)
-            #     if self.agent2.name == 'agent1':
-            #         self.agent2.save_model(self.global_episode_count)
+            self.agent1.clear_buffer()
+            self.agent2.clear_buffer()

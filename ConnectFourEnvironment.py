@@ -58,7 +58,7 @@ class ConnectFourEnvironment:
                 1 if self.__yellows_turn__ else 2
         else:  # prohibited move
             self.__needs_reset__ = True
-            print("Move prohibited!")
+            # print("Move prohibited!")
             self.__reward__ = -60 if self.yellows_turn() else 0
             self.__needs_reset__ = True
 

@@ -8,16 +8,23 @@ class Agent:
         self.optim = optim
         self.name = f"agent{number}"
         self.network = network
-        # self.model = A3CNetwork(s_size, a_size, self.name, trainer)
-        # target_graph = 'global_yellow' if number % 2 == 0 else 'global_red'
-        # self.update_local_ops = update_target_graph('global', self.name)
-        # self.rnn_state = self.model.state_init
         self.epidode_buffer = []
+        self.losses = []
 
         self.model_path = 'yellow_model' if number % 2 == 0 else 'red_model'
 
     def add_transition(self, s, a, r, v):
         self.epidode_buffer.append([s, a, r, v])
+
+    def log_loss(self, loss):
+        self.losses.append(loss)
+        if len(self.losses) == 100:
+            mean = np.mean(self.losses)
+            self.losses = []
+            return mean
+
+    def clear_buffer(self):
+        self.epidode_buffer = []
 
     def choose_action(self, s):
         a, v, e = self.network(s)
@@ -39,7 +46,13 @@ class Agent:
         advantages = rewards + gamma * values - values  # why not discounted ??
         advantages = discount(advantages, gamma)
 
-        loss = self.network.loss(discounted_rewards, actions, advantages)
+        loss = self.network.compute_loss(discounted_rewards,
+                                         actions,
+                                         advantages)
+
+        loss_mean = self.log_loss(loss.data[0])
+        if loss_mean is not None:
+            print(loss_mean)
 
         self.optim.zero_grad()
         loss.backward()
