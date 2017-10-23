@@ -1,25 +1,28 @@
+import numpy as np
+import torch
+from torch.autograd import Variable
+
 from ConnectFourEnvironment import ConnectFourEnvironment
 
 
 class EnvironmentManager:
-    def __init__(self, agent1, agent2, session_common, coord):
+    def __init__(self, agent1, agent2):
         self.agent1 = agent1
         self.agent2 = agent2
-        self.session_common = session_common
-        self.coord = coord
-        self.rnn_state_yellow = None
-        self.rnn_state_red = None
         self.global_episode_count = 0
+        self.request_stop = False
 
-        self.environment = ConnectFourEnvironment()
+        self.environment = ConnectFourEnvironment(play_with_rng=False)
 
     def work(self):
-        while not self.coord.should_stop():
+        print(f"Starting environment with agents {self.agent1.name} "
+              f"and {self.agent2.name}")
+        while not self.request_stop:
             s = self.environment.reset()
             d = False
 
-            self.agent1.reset()
-            self.agent2.reset()
+            # self.agent1.reset()
+            # self.agent2.reset()
 
             while not d:
                 if self.environment.yellows_turn():
@@ -27,30 +30,26 @@ class EnvironmentManager:
                 else:
                     agent = self.agent2
 
-                a, v = agent.choose_action(s)
+                s_variable = Variable(torch.from_numpy(s)).float().unsqueeze(0)
+                policy, v, e = agent.choose_action(s_variable)
+                # v = v.data.numpy().squeeze()
+                policy = np.squeeze(policy.data.numpy())
+                a = np.random.choice(policy, p=policy)
+                a = np.argmax(policy == a)
                 s1, r, d, info = self.environment.step(a)
                 r /= 100.
                 if d:
                     s1 = s
 
-                agent.add_transition([s, a, r, v[0, 0]])
+                agent.add_transition(s, a, r, v)
                 s = s1
 
             self.global_episode_count += 1
-            if self.global_episode_count % 250 == 0:
-                if self.agent1.name == 'agent0':
-                    self.agent1.save_model(self.global_episode_count)
-                if self.agent2.name == 'agent1':
-                    self.agent2.save_model(self.global_episode_count)
+            self.agent1.train(gamma=.99)
+            self.agent2.train(gamma=.99)
 
-
-                    # if agent == self.agent1:
-                    #     if info == 'prohibited':
-                    #         self.agent2.add_reward(0)
-                    #     else:
-                    #         self.agent2.add_reward(-episode_reward)
-                    # else:
-                    #     if info == 'prohibited':
-                    #         self.agent1.add_reward(0)
-                    #     else:
-                    #         self.agent1.add_reward(-episode_reward)
+            # if self.global_episode_count % 250 == 0:
+            #     if self.agent1.name == 'agent0':
+            #         self.agent1.save_model(self.global_episode_count)
+            #     if self.agent2.name == 'agent1':
+            #         self.agent2.save_model(self.global_episode_count)
