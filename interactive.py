@@ -1,46 +1,35 @@
-import numpy as np
-import tensorflow as tf
+import os
 
-from A3CNetwork import A3CNetwork
+import numpy as np
+import torch
+from torch.autograd import Variable
+
+from Agent import Agent
 from ConnectFourEnvironment import ConnectFourEnvironment
-from common import a_size, s_size
 
 env = ConnectFourEnvironment(play_with_rng=False)
 
-tf.reset_default_graph()
-model = A3CNetwork(s_size, a_size, 'global', None)
+model_dir = './model_yellow'
+model_path = os.path.join(model_dir, os.listdir(model_dir)[0])
 
-saver = tf.train.Saver()
-model_dir = './model'
+model = torch.load(model_path)
 
-with tf.Session() as sess:
-    latest_checkpoint = tf.train.latest_checkpoint(model_dir)
-    sess.run(tf.global_variables_initializer())
-    saver.restore(sess, latest_checkpoint)
+agent = Agent(0, model, None)
 
-    while True:
-        s = env.reset()
-        rnn_state = model.state_init
-        d = False
-        total_reward = 0
-        while not d:
-            if env.yellows_turn():
-                a_dist, rnn_state = sess.run(
-                    [model.policy,
-                     model.state_out],
-                    feed_dict={model.inputs: [s],
-                               model.state_in[0]: rnn_state[0],
-                               model.state_in[1]: rnn_state[1]})
-                print("Policy:", a_dist)
-                a = np.random.choice(a_dist[0], p=a_dist[0])
-                a = np.argmax(a == a_dist)
-            else:
-                a = input('Choose action (0-6): ')
-                a = int(a)
+while True:
+    env.reset()
+    d = False
+    while not d:
+        if env.yellows_turn():
+            s = env.get_state().flatten()
+            s_var = Variable(torch.from_numpy(s)).float().unsqueeze(0)
+            a_dist, _, _ = agent.choose_action(s_var)
+            a_dist = np.squeeze(a_dist.data.numpy())
+            a = np.random.choice(a_dist, p=a_dist)
+            a = np.argmax(a == a_dist)
+        else:
+            a = input('Choose action (0-6): ')
+            a = int(a)
 
-            s, r, d = env.step(a)
-
-            env.render()
-
-            total_reward += r
-        print("Reward:", total_reward)
+        _, r, d, _ = env.step(a)
+        env.render()

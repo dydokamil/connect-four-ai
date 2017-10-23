@@ -1,4 +1,8 @@
+import copy
+import os
+
 import numpy as np
+import torch
 
 from common import discount
 
@@ -7,14 +11,15 @@ class Agent:
     def __init__(self, number, network, optim):
         self.optim = optim
         self.name = f"agent{number}"
-        self.network = network
+        self.network_original = network
+        self.network = copy.deepcopy(self.network_original)
         self.epidode_buffer = []
         self.losses = []
 
         self.model_path = 'yellow_model' if number % 2 == 0 else 'red_model'
 
-    def add_transition(self, s, a, r, v):
-        self.epidode_buffer.append([s, a, r, v])
+    def add_transition(self, a, r, v):
+        self.epidode_buffer.append([a, r, v])
 
     def log_loss(self, loss):
         self.losses.append(loss)
@@ -23,8 +28,9 @@ class Agent:
             self.losses = []
             return mean
 
-    def clear_buffer(self):
+    def reset_agent(self):
         self.epidode_buffer = []
+        self.network = copy.deepcopy(self.network_original)
 
     def choose_action(self, s):
         a, v, e = self.network(s)
@@ -37,10 +43,9 @@ class Agent:
 
     def train(self, gamma):
         rollout = np.array(self.epidode_buffer)
-        observations = rollout[:, 0]
-        actions = rollout[:, 1]
-        rewards = rollout[:, 2]
-        values = np.asarray(rollout[:, 3])
+        actions = rollout[:, 0]
+        rewards = rollout[:, 1]
+        values = np.asarray(rollout[:, 2])
 
         discounted_rewards = discount(rewards, gamma).astype(np.float32)
         advantages = rewards + gamma * values - values  # why not discounted ??
@@ -57,3 +62,11 @@ class Agent:
         self.optim.zero_grad()
         loss.backward()
         self.optim.step()
+
+        self.network_original.load_state_dict(self.network.state_dict())
+        # self.network_original = copy.deepcopy(self.network)
+
+    def save(self):
+        if self.name == 'agent0' or self.name == 'agent1':
+            torch.save(self.network, os.path.join(self.model_path,
+                                                  self.model_path))

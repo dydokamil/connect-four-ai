@@ -27,8 +27,8 @@ if __name__ == '__main__':
     red_network = Net()
     yellow_network = Net()
 
-    # num_workers = multiprocessing.cpu_count()
-    num_workers = 1
+    num_workers = multiprocessing.cpu_count()
+    # num_workers = 2
 
     managers = []
 

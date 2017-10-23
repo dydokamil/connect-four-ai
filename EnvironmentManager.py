@@ -42,15 +42,16 @@ class EnvironmentManager:
                     self.environment.render()
 
                 r /= 100.
-                if d:
-                    s1 = s
 
-                agent.add_transition(s, a, r, v)
-                s = s1
+                agent.add_transition(a, r, v)
 
             self.global_episode_count += 1
             self.agent1.train(gamma=.99)
             self.agent2.train(gamma=.99)
 
-            self.agent1.clear_buffer()
-            self.agent2.clear_buffer()
+            self.agent1.reset_agent()
+            self.agent2.reset_agent()
+
+            if self.global_episode_count % 1000 == 0:
+                self.agent1.save()
+                self.agent2.save()
