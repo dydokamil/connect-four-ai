@@ -9,8 +9,9 @@ from ConnectFourEnvironment import ConnectFourEnvironment
 
 env = ConnectFourEnvironment(play_with_rng=False)
 
-model_dir = './model_yellow'
-model_path = os.path.join(model_dir, os.listdir(model_dir)[0])
+# model_dir = './model_yellow'
+# model_path = os.path.join(model_dir, os.listdir(model_dir)[0])
+model_path = './yellow_model'
 
 model = torch.load(model_path)
 

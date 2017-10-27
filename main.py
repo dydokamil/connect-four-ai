@@ -1,8 +1,8 @@
-import multiprocessing
 import os
 import threading
 import time
 
+import torch
 import torch.optim as optim
 
 from A3C_Network import Net
@@ -11,24 +11,27 @@ from EnvironmentManager import EnvironmentManager
 from common import s_size
 
 if __name__ == '__main__':
-    model_yellow = "model_yellow"
-    model_red = "model_red"
+    model_yellow = "yellow_model"
+    model_red = "red_model"
     max_episode_length = s_size
     gamma = .99
 
     load_model = False
-    if not os.path.exists(model_yellow) and not os.path.exists(model_yellow):
-        os.makedirs(model_yellow)
-        os.makedirs(model_red)
-    else:
+    if os.path.isfile(model_yellow) and os.path.isfile(model_red):
         load_model = True
 
     global_episodes = 0
-    red_network = Net()
-    yellow_network = Net()
+    if load_model:
+        print("Loading models from files...")
+        red_network = torch.load(model_red)
+        yellow_network = torch.load(model_yellow)
+        print("Loaded.")
+    else:
+        red_network = Net()
+        yellow_network = Net()
 
-    num_workers = multiprocessing.cpu_count()
-    # num_workers = 2
+    # num_workers = multiprocessing.cpu_count()
+    num_workers = 1
 
     managers = []
 

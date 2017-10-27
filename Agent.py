@@ -1,9 +1,7 @@
-import copy
-import os
-
 import numpy as np
 import torch
 
+from A3C_Network import Net
 from common import discount
 
 
@@ -11,8 +9,10 @@ class Agent:
     def __init__(self, number, network, optim):
         self.optim = optim
         self.name = f"agent{number}"
+        # self.network_original = network
         self.network_original = network
-        self.network = copy.deepcopy(self.network_original)
+        self.local_network = Net()
+        self.local_network.load_state_dict(self.network_original.state_dict())
         self.epidode_buffer = []
         self.losses = []
 
@@ -30,10 +30,11 @@ class Agent:
 
     def reset_agent(self):
         self.epidode_buffer = []
-        self.network = copy.deepcopy(self.network_original)
+        self.local_network.load_state_dict(self.network_original.state_dict())
+        # self.network = copy.deepcopy(self.network_original)
 
     def choose_action(self, s):
-        a, v, e = self.network(s)
+        a, v, e = self.local_network(s)
 
         return a, v, e
 
@@ -51,9 +52,9 @@ class Agent:
         advantages = rewards + gamma * values - values  # why not discounted ??
         advantages = discount(advantages, gamma)
 
-        loss = self.network.compute_loss(discounted_rewards,
-                                         actions,
-                                         advantages)
+        loss = self.local_network.compute_loss(discounted_rewards,
+                                               actions,
+                                               advantages)
 
         loss_mean = self.log_loss(loss.data[0])
         if loss_mean is not None:
@@ -63,10 +64,9 @@ class Agent:
         loss.backward()
         self.optim.step()
 
-        self.network_original.load_state_dict(self.network.state_dict())
+        self.network_original.load_state_dict(self.local_network.state_dict())
         # self.network_original = copy.deepcopy(self.network)
 
     def save(self):
         if self.name == 'agent0' or self.name == 'agent1':
-            torch.save(self.network, os.path.join(self.model_path,
-                                                  self.model_path))
+            torch.save(self.local_network, self.model_path)
