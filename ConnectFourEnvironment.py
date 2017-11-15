@@ -2,23 +2,21 @@ import numpy as np
 
 
 class ConnectFourEnvironment:
-    def __init__(self, play_with_rng=True):
-        self.__grid__ = np.zeros((6, 7))
+    def __init__(self):
+        self.__grid__ = np.zeros((6, 7), dtype=np.int8)
         self.__needs_reset__ = True
         self.__yellows_turn__ = True
-        self.__reward__ = 0
-        self.__play_with_rng__ = play_with_rng
         self.move_penalty = -0.05
-        self.prohibited_penalty = -60.
+        self.prohibited_penalty = -6
 
     def render(self):
         for row in self.__grid__:
             for element in row:
-                if element == .0:
+                if element == 0:
                     element = '#'
-                elif element == 1.:
+                elif element == -1:
                     element = 'o'
-                elif element == 2.:
+                elif element == 1:
                     element = 'x'
                 element = '#' if element == 0.0 else element
                 print(element, '', end='')
@@ -28,7 +26,7 @@ class ConnectFourEnvironment:
     def reset(self):
         self.__reward__ = 0
         self.__needs_reset__ = False
-        self.__grid__ = np.zeros((6, 7))
+        self.__grid__ = np.zeros((6, 7), dtype=np.int8)
         self.__yellows_turn__ = True
         return np.copy(self.__grid__).flatten()
 
@@ -55,32 +53,22 @@ class ConnectFourEnvironment:
             free_rows = np.where(self.__grid__[:, action] == 0)[0]
             lowest_row = free_rows[-1]
             self.__grid__[lowest_row, action] = \
-                1 if self.__yellows_turn__ else 2
+                -1 if self.__yellows_turn__ else 1
         else:  # prohibited move
             self.__needs_reset__ = True
-            # print("Move prohibited!")
-            self.__reward__ = -6. if self.yellows_turn() else 0
-            self.__needs_reset__ = True
+            return (self.get_state().flatten(),
+                    self.prohibited_penalty,
+                    self.is_finished(),
+                    'prohibited')
 
         self.__yellows_turn__ = not self.__yellows_turn__
 
-        if self.__play_with_rng__ \
-                and not self.yellows_turn() \
-                and not self.is_finished():
-            self.step(self.get_random_action())
-
-        if not self.__reward__ == self.prohibited_penalty:
-            self.__reward__ = self.__detect_termination__()
-
-        if self.__reward__ != self.move_penalty:
-            self.__needs_reset__ = True
-
-        info = None
-        if self.__reward__ == self.prohibited_penalty:
-            info = 'prohibited'
+        reward = self.__detect_termination__()
 
         return (self.get_state().flatten(),
-                self.__reward__, self.is_finished(), info)
+                reward,
+                self.is_finished(),
+                None)
 
     def is_finished(self):
         return self.__needs_reset__
@@ -109,12 +97,9 @@ class ConnectFourEnvironment:
                     window = next(gen)
                     unique = np.unique(window)
                     if len(unique) == 1:
-                        if unique == 1.:
-                            # print("P1 won.")
+                        if unique == 1 or unique == -1:
+                            self.__needs_reset__ = True
                             return 5.
-                        elif unique == 2.:
-                            # print("P2 won.")
-                            return -5.
                 except StopIteration:
                     break
 
@@ -131,12 +116,9 @@ class ConnectFourEnvironment:
                     window = next(gen)
                     unique = np.unique(np.diag(window))
                     if len(unique) == 1:
-                        if unique == 1.:
-                            # print("P1 won.")
+                        if unique == 1 or unique == -1:
+                            self.__needs_reset__ = True
                             return 5.
-                        elif unique == 2.:
-                            # print("P2 won.")
-                            return -5.
                 except StopIteration:
                     break
 
@@ -144,4 +126,4 @@ class ConnectFourEnvironment:
             print("Draw.")
             return -1
 
-        return -0.05
+        return self.move_penalty
