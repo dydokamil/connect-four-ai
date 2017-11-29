@@ -6,7 +6,7 @@ from common import a_size, s_size
 
 class ConnectFourEnvironment:
     action_space = spaces.Discrete(7)
-    observation_space = spaces.Discrete([7, 6])
+    observation_space = spaces.Discrete(6 * 7)
 
     def __init__(self):
         self.__grid__ = np.zeros((6, 7), dtype=np.int8)
