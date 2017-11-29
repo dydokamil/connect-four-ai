@@ -9,11 +9,13 @@ class ConnectFourEnvironment:
     observation_space = spaces.Discrete(6 * 7)
 
     def __init__(self):
-        self.__grid__ = np.zeros((6, 7), dtype=np.int8)
+        self.__grid__ = np.zeros((6, 7), dtype=int)
         self.__needs_reset__ = True
         self.__yellows_turn__ = True
-        self.move_penalty = -0.05
+        self.move_penalty = 0
         self.prohibited_penalty = -6
+        self.win_reward = 5
+        self.draw_penalty = -1
 
     def render(self):
         for row in self.__grid__:
@@ -32,9 +34,9 @@ class ConnectFourEnvironment:
     def reset(self):
         self.__reward__ = 0
         self.__needs_reset__ = False
-        self.__grid__ = np.zeros((6, 7), dtype=np.int8)
+        self.__grid__ = np.zeros((6, 7), dtype=int)
         self.__yellows_turn__ = True
-        return np.copy(self.__grid__).flatten()
+        return np.copy(self.__grid__)
 
     def yellows_turn(self):
         return self.__yellows_turn__
@@ -62,7 +64,7 @@ class ConnectFourEnvironment:
                 -1 if self.__yellows_turn__ else 1
         else:  # prohibited move
             self.__needs_reset__ = True
-            return (self.get_state().flatten(),
+            return (self.get_state(),
                     self.prohibited_penalty,
                     self.is_finished(),
                     'prohibited')
@@ -71,7 +73,7 @@ class ConnectFourEnvironment:
 
         reward = self.__detect_termination__()
 
-        return (self.get_state().flatten(),
+        return (self.get_state(),
                 reward,
                 self.is_finished(),
                 None)
@@ -105,7 +107,7 @@ class ConnectFourEnvironment:
                     if len(unique) == 1:
                         if unique == 1 or unique == -1:
                             self.__needs_reset__ = True
-                            return 5.
+                            return self.win_reward
                 except StopIteration:
                     break
 
@@ -124,12 +126,12 @@ class ConnectFourEnvironment:
                     if len(unique) == 1:
                         if unique == 1 or unique == -1:
                             self.__needs_reset__ = True
-                            return 5.
+                            return self.win_reward
                 except StopIteration:
                     break
 
         if np.all(self.__grid__ != 0):
             print("Draw.")
-            return -1
+            return self.draw_penalty
 
         return self.move_penalty
