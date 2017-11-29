@@ -32,11 +32,10 @@ class ConnectFourEnvironment:
         print()
 
     def reset(self):
-        self.__reward__ = 0
         self.__needs_reset__ = False
         self.__grid__ = np.zeros((6, 7), dtype=int)
         self.__yellows_turn__ = True
-        return np.copy(self.__grid__)
+        return self.get_state()
 
     def yellows_turn(self):
         return self.__yellows_turn__
@@ -47,7 +46,7 @@ class ConnectFourEnvironment:
             return np.random.choice(free_cols)
 
     def get_state(self):
-        return np.copy(self.__grid__)
+        return np.expand_dims(np.copy(self.__grid__), axis=0)
 
     def can_move(self, action):
         if np.any(self.__grid__[:, action] == 0):
