@@ -12,15 +12,15 @@ class EnvironmentManager:
         self.global_episode_count = 0
         self.request_stop = False
 
-        self.environment = ConnectFourEnvironment(play_with_rng=False)
+        self.environment = ConnectFourEnvironment()
 
     def work(self):
         print(f"Starting environment with agents {self.agent1.name} "
               f"and {self.agent2.name}")
         while not self.request_stop:
             self.environment.reset()
-            if self.global_episode_count % 1000 == 999:
-                self.environment.render()
+            # if self.global_episode_count % 1000 == 999:
+            #     self.environment.render()
             d = False
 
             while not d:
