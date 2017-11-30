@@ -1,60 +1,168 @@
 import os
+import numpy as np
 import threading
 import time
 
 import torch
+import torch.nn as nn
 import torch.optim as optim
+from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
+from torch.autograd import Variable
 
 from A3C_Network import Net
 from Agent import Agent
+from ConnectFourEnvironment import ConnectFourEnvironment
 from EnvironmentManager import EnvironmentManager
-from common import s_size
+from common import s_size, NUM_PROCESSES, NUM_STACK, CUDA, EPS, LR, ALPHA, \
+    NUM_STEPS, NUM_FRAMES, VALUE_LOSS_COEF, ENTROPY_COEF, MAX_GRAD_NORM
+from model import CNNPolicy
+from storage import RolloutStorage
+
+NUM_UPDATES = NUM_FRAMES // NUM_STEPS // NUM_PROCESSES
 
 if __name__ == '__main__':
-    model_yellow = "yellow_model"
-    model_red = "red_model"
-    max_episode_length = s_size
-    gamma = .99
+    action_shape = 1
 
-    load_model = False
-    if os.path.isfile(model_yellow) and os.path.isfile(model_red):
-        load_model = True
+    envs = [ConnectFourEnvironment for _ in range(NUM_PROCESSES)]
+    envs = SubprocVecEnv(envs)
 
-    global_episodes = 0
-    if load_model:
-        print("Loading models from files...")
-        red_network = torch.load(model_red)
-        yellow_network = torch.load(model_yellow)
-        print("Loaded.")
-    else:
-        red_network = Net()
-        yellow_network = Net()
+    obs_shape = envs.observation_space.shape
+    obs_shape = (obs_shape[0] * NUM_STACK, *obs_shape[1:])
+
+    actor_critic_yellow = CNNPolicy(obs_shape[0], envs.action_space)
+    actor_critic_red = CNNPolicy(obs_shape[0], envs.action_space)
+
+    if CUDA:
+        actor_critic_yellow.cuda()
+        actor_critic_red.cuda()
+
+    # model_yellow = "yellow_model"
+    # model_red = "red_model"
+    # max_episode_length = s_size
+    # gamma = .99
+
+    # load_model = False
+    # if os.path.isfile(model_yellow) and os.path.isfile(model_red):
+    #     load_model = True
+
+    # global_episodes = 0
+    # if load_model:
+    #     print("Loading models from files...")
+    #     red_network = torch.load(model_red)
+    #     yellow_network = torch.load(model_yellow)
+    #     print("Loaded.")
+    # else:
+    #     red_network = Net()
+    #     yellow_network = Net()
 
     # num_workers = multiprocessing.cpu_count()
-    num_workers = 1
+    # num_workers = 1
 
-    managers = []
+    optim_yellow = optim.RMSprop(actor_critic_yellow.parameters(), lr=LR,
+                                 eps=EPS, alpha=ALPHA)
+    optim_red = optim.RMSprop(actor_critic_red.parameters(), lr=LR, eps=EPS,
+                              alpha=ALPHA)
 
-    yellow_optim = optim.Adam(yellow_network.parameters())
-    red_optim = optim.Adam(red_network.parameters())
+    rollouts_yellow = RolloutStorage(NUM_STEPS, NUM_PROCESSES, obs_shape,
+                                     envs.action_space,
+                                     actor_critic_red.state_size)
+    rollouts_red = RolloutStorage(NUM_STEPS, NUM_PROCESSES, obs_shape,
+                                  envs.action_space,
+                                  actor_critic_red.state_size)
 
-    num = 0
-    for i in range(num_workers):
-        agent1 = Agent(num, yellow_network, yellow_optim)
-        agent2 = Agent(num + 1, red_network, red_optim)
-        num += 2
-        managers.append(EnvironmentManager(agent1, agent2))
-
-    worker_threads = []
-
-    for worker in managers:
-        def worker_work(): worker.work()
+    current_obs = torch.zeros(NUM_PROCESSES, *obs_shape)
 
 
-        t = threading.Thread(target=worker_work)
-        t.start()
-        time.sleep(.5)
-        worker_threads.append(t)
+    def update_current_obs(obs):
+        shape_dim0 = envs.observation_space.shape[0]
+        obs = torch.from_numpy(obs).float()
+        if NUM_STACK > 1:
+            current_obs[:, :-shape_dim0] = current_obs[:, shape_dim0:]
+        current_obs[:, -shape_dim0:] = obs
 
-    for t in worker_threads:
-        t.join()
+
+    obs = envs.reset()
+    update_current_obs(obs)
+
+    rollouts_yellow.observations[0].copy_(current_obs)
+
+    # episode_rewards = torch.zeros([NUM_PROCESSES, 1])
+    # final_rewards = torch.zeros([NUM_PROCESSES, 1])
+
+    if CUDA:
+        current_obs = current_obs.cuda()
+        rollouts_yellow.cuda()
+        rollouts_red.cuda()
+
+    start = time.time()
+    for j in range(int(NUM_UPDATES)):
+        for step in range(NUM_STEPS):
+            for k in range(2):
+                if k == 0:
+                    actor_critic = actor_critic_yellow
+                    rollouts = rollouts_yellow
+                else:
+                    actor_critic = actor_critic_red
+                    rollouts = rollouts_red
+
+                value, action, action_log_prob, states = actor_critic.act(
+                    Variable(rollouts.observations[step], volatile=True),
+                    Variable(rollouts.states[step], volatile=True),
+                    Variable(rollouts.masks[step], volatile=True)
+                )
+
+                cpu_actions = action.data.squeeze(1).cpu().numpy()
+
+                obs, reward, done, info = envs.step(cpu_actions)
+                reward = torch.from_numpy(
+                    np.expand_dims(np.stack(reward), 1)).float()
+
+                masks = torch.FloatTensor(
+                    [[0.] if done_ else [1.] for done_ in done]
+                )
+
+                if CUDA:
+                    masks = masks.cuda()
+
+                if current_obs.dim() == 4:
+                    current_obs *= masks.unsqueeze(2).unsqueeze(2)
+                else:
+                    current_obs *= masks
+
+                update_current_obs(obs)
+                rollouts.insert(step, current_obs, states.data, action.data,
+                                action_log_prob.data, value.data, reward, masks)
+
+        next_value = actor_critic(
+            Variable(rollouts.observations[-1], volatile=True),
+            Variable(rollouts.states[-1], volatile=True),
+            Variable(rollouts.masks[-1], volatile=True)
+        )[0].data
+
+        (values, action_log_probs, dist_entropy, states) = \
+            actor_critic.evaluate_actions(
+                Variable(rollouts.observations[:-1].view(-1, *obs_shape)),
+                Variable(rollouts.states[0].view(-1, actor_critic.state_size)),
+                Variable(rollouts.masks[:-1].view(-1, 1)),
+                Variable(rollouts.actions.view(-1, action_shape))
+            )
+
+        values = values.view(NUM_STEPS, NUM_PROCESSES, 1)
+        action_log_probs = action_log_probs.view(NUM_STEPS, NUM_PROCESSES, 1)
+        advantages = Variable(rollouts.returns[:-1]) - values
+        value_loss = advantages.pow(2).mean()
+
+        action_loss = -(Variable(advantages.data) * action_log_probs).mean()
+
+        for optimizer in [optim_yellow, optim_red]:
+            optimizer.zero_grad()
+            (value_loss
+             * VALUE_LOSS_COEF
+             + action_loss
+             - dist_entropy
+             * ENTROPY_COEF).backward()
+
+            nn.utils.clip_grad_norm(actor_critic.parameters(), MAX_GRAD_NORM)
+            optimizer.step()
+
+            rollouts.after_update()
