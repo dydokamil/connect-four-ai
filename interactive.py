@@ -1,36 +1,49 @@
 import os
 
-import numpy as np
 import torch
 from torch.autograd import Variable
 
-from Agent import Agent
 from ConnectFourEnvironment import ConnectFourEnvironment
+from common import SAVE_DIR, NUM_PROCESSES, NUM_STACK
 
-env = ConnectFourEnvironment(play_with_rng=False)
+env = ConnectFourEnvironment()
+model_path = os.path.join(SAVE_DIR, 'a2c', 'ConnectFourRed.pt')
+actor_critic, _ = torch.load(model_path)
 
-# model_dir = './model_yellow'
-# model_path = os.path.join(model_dir, os.listdir(model_dir)[0])
-model_path = './yellow_model'
+obs_shape = env.observation_space.shape
+obs_shape = (obs_shape[0] * NUM_STACK, *obs_shape[1:])
 
-model = torch.load(model_path)
+current_obs = torch.zeros(1, *obs_shape)
 
-agent = Agent(0, model, None)
+
+def update_current_obs(obs):
+    shape_dim0 = env.observation_space.shape[0]
+    obs = torch.from_numpy(obs).float()
+    if NUM_STACK > 1:
+        current_obs[:, :-shape_dim0] = current_obs[:, shape_dim0:]
+    current_obs[:, -shape_dim0:] = obs
+
+
+obs = env.reset()
+update_current_obs(obs)
 
 while True:
-    env.reset()
+    s = env.reset()
     d = False
     while not d:
-        if env.yellows_turn():
-            s = env.get_state().flatten()
-            s_var = Variable(torch.from_numpy(s)).float().unsqueeze(0)
-            a_dist, _, _ = agent.choose_action(s_var)
-            a_dist = np.squeeze(a_dist.data.numpy())
-            a = np.random.choice(a_dist, p=a_dist)
-            a = np.argmax(a == a_dist)
+        if not env.yellows_turn():
+            value, action, action_log_prob, states = actor_critic.act(
+                Variable(current_obs, volatile=True),
+                Variable(torch.zeros([1, 6, 7]), volatile=True),
+                Variable(torch.ones([1, 6, 7]), volatile=True)
+            )
+
+            a = action.data.squeeze(1).cpu().numpy()
         else:
             a = input('Choose action (0-6): ')
             a = int(a)
 
-        _, r, d, _ = env.step(a)
+        s, r, d, _ = env.step(a)
         env.render()
+        update_current_obs(s)
+    print("Resetting...")
