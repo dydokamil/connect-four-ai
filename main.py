@@ -1,19 +1,15 @@
-import os
 import numpy as np
-import threading
 import time
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 from torch.autograd import Variable
 
-from A3C_Network import Net
-from Agent import Agent
 from ConnectFourEnvironment import ConnectFourEnvironment
-from EnvironmentManager import EnvironmentManager
-from common import s_size, NUM_PROCESSES, NUM_STACK, CUDA, EPS, LR, ALPHA, \
+from common import NUM_PROCESSES, NUM_STACK, CUDA, EPS, LR, ALPHA, \
     NUM_STEPS, NUM_FRAMES, VALUE_LOSS_COEF, ENTROPY_COEF, MAX_GRAD_NORM
 from model import CNNPolicy
 from storage import RolloutStorage
@@ -65,7 +61,7 @@ if __name__ == '__main__':
 
     rollouts_yellow = RolloutStorage(NUM_STEPS, NUM_PROCESSES, obs_shape,
                                      envs.action_space,
-                                     actor_critic_red.state_size)
+                                     actor_critic_yellow.state_size)
     rollouts_red = RolloutStorage(NUM_STEPS, NUM_PROCESSES, obs_shape,
                                   envs.action_space,
                                   actor_critic_red.state_size)
@@ -115,7 +111,8 @@ if __name__ == '__main__':
 
                 obs, reward, done, info = envs.step(cpu_actions)
                 reward = torch.from_numpy(
-                    np.expand_dims(np.stack(reward), 1)).float()
+                    np.expand_dims(np.stack(reward), 1)
+                ).float()
 
                 masks = torch.FloatTensor(
                     [[0.] if done_ else [1.] for done_ in done]
@@ -131,30 +128,46 @@ if __name__ == '__main__':
 
                 update_current_obs(obs)
                 rollouts.insert(step, current_obs, states.data, action.data,
-                                action_log_prob.data, value.data, reward, masks)
+                                action_log_prob.data, value.data, reward, masks
+                                )
 
-        next_value = actor_critic(
-            Variable(rollouts.observations[-1], volatile=True),
-            Variable(rollouts.states[-1], volatile=True),
-            Variable(rollouts.masks[-1], volatile=True)
-        )[0].data
+        for actor_critic, rollouts, optimizer in [(actor_critic_yellow,
+                                                   rollouts_yellow,
+                                                   optim_yellow),
+                                                  (actor_critic_red,
+                                                   rollouts_red,
+                                                   optim_red)]:
+            next_value = actor_critic(
+                Variable(rollouts.observations[-1], volatile=True),
+                Variable(rollouts.states[-1], volatile=True),
+                Variable(rollouts.masks[-1], volatile=True)
+            )[0].data
 
-        (values, action_log_probs, dist_entropy, states) = \
-            actor_critic.evaluate_actions(
-                Variable(rollouts.observations[:-1].view(-1, *obs_shape)),
-                Variable(rollouts.states[0].view(-1, actor_critic.state_size)),
-                Variable(rollouts.masks[:-1].view(-1, 1)),
-                Variable(rollouts.actions.view(-1, action_shape))
-            )
+            (values, action_log_probs, dist_entropy, states) = \
+                actor_critic.evaluate_actions(
+                    Variable(
+                        rollouts.observations[:-1].view(-1, *obs_shape)
+                    ),
+                    Variable(
+                        rollouts.states[0].view(-1, actor_critic.state_size)
+                    ),
+                    Variable(
+                        rollouts.masks[:-1].view(-1, 1)
+                    ),
+                    Variable(
+                        rollouts.actions.view(-1, action_shape)
+                    )
+                )
 
-        values = values.view(NUM_STEPS, NUM_PROCESSES, 1)
-        action_log_probs = action_log_probs.view(NUM_STEPS, NUM_PROCESSES, 1)
-        advantages = Variable(rollouts.returns[:-1]) - values
-        value_loss = advantages.pow(2).mean()
+            values = values.view(NUM_STEPS, NUM_PROCESSES, 1)
+            action_log_probs = action_log_probs.view(NUM_STEPS, NUM_PROCESSES,
+                                                     1)
+            advantages = Variable(rollouts.returns[:-1]) - values
+            value_loss = advantages.pow(2).mean()
 
-        action_loss = -(Variable(advantages.data) * action_log_probs).mean()
+            action_loss = -(
+                    Variable(advantages.data) * action_log_probs).mean()
 
-        for optimizer in [optim_yellow, optim_red]:
             optimizer.zero_grad()
             (value_loss
              * VALUE_LOSS_COEF
@@ -162,7 +175,8 @@ if __name__ == '__main__':
              - dist_entropy
              * ENTROPY_COEF).backward()
 
-            nn.utils.clip_grad_norm(actor_critic.parameters(), MAX_GRAD_NORM)
+            nn.utils.clip_grad_norm(actor_critic.parameters(),
+                                    MAX_GRAD_NORM)
             optimizer.step()
 
             rollouts.after_update()
