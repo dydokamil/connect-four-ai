@@ -1,4 +1,5 @@
-import numpy as np
+import copy
+import os
 import time
 
 import numpy as np
@@ -10,7 +11,8 @@ from torch.autograd import Variable
 
 from ConnectFourEnvironment import ConnectFourEnvironment
 from common import NUM_PROCESSES, NUM_STACK, CUDA, EPS, LR, ALPHA, \
-    NUM_STEPS, NUM_FRAMES, VALUE_LOSS_COEF, ENTROPY_COEF, MAX_GRAD_NORM
+    NUM_STEPS, NUM_FRAMES, VALUE_LOSS_COEF, ENTROPY_COEF, MAX_GRAD_NORM, \
+    SAVE_DIR, SAVE_INTERVAL
 from model import CNNPolicy
 from storage import RolloutStorage
 
@@ -164,6 +166,8 @@ if __name__ == '__main__':
                                                      1)
             advantages = Variable(rollouts.returns[:-1]) - values
             value_loss = advantages.pow(2).mean()
+            if j % 100 == 0:
+                print(f'Value loss: {value_loss}')
 
             action_loss = -(
                     Variable(advantages.data) * action_log_probs).mean()
@@ -180,3 +184,23 @@ if __name__ == '__main__':
             optimizer.step()
 
             rollouts.after_update()
+
+            if j % SAVE_INTERVAL == 0 and SAVE_DIR != "":
+                save_path = os.path.join(SAVE_DIR, 'a2c')
+                try:
+                    os.makedirs(save_path)
+                except OSError:
+                    pass
+
+                # A really ugly way to save a model to CPU
+                save_model = actor_critic
+                if CUDA:
+                    save_model = copy.deepcopy(actor_critic).cpu()
+
+                save_model = [save_model,
+                              hasattr(envs, 'ob_rms') and envs.ob_rms or None]
+
+                torch.save(save_model,
+                           os.path.join(save_path,
+                                        f"ConnectFour{'Yellow' if actor_critic == actor_critic_yellow else 'Red'}.pt")
+                           )

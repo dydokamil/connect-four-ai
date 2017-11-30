@@ -16,6 +16,9 @@ NUM_FRAMES = 10e6
 VALUE_LOSS_COEF = .5
 ENTROPY_COEF = .01
 MAX_GRAD_NORM = .5
+LOG_INTERVAL = 100
+SAVE_INTERVAL = 100
+SAVE_DIR = './trained_models/'
 
 
 # Discounting function used to calculate discounted returns.
