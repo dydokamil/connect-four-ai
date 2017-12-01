@@ -12,7 +12,7 @@ from torch.autograd import Variable
 from ConnectFourEnvironment import ConnectFourEnvironment
 from common import NUM_PROCESSES, NUM_STACK, CUDA, EPS, LR, ALPHA, \
     NUM_STEPS, NUM_FRAMES, VALUE_LOSS_COEF, ENTROPY_COEF, MAX_GRAD_NORM, \
-    SAVE_DIR, SAVE_INTERVAL
+    SAVE_DIR, SAVE_INTERVAL, USE_GAE, GAMMA, TAU
 from model import CNNPolicy
 from storage import RolloutStorage
 
@@ -145,6 +145,8 @@ if __name__ == '__main__':
                 Variable(rollouts.masks[-1], volatile=True)
             )[0].data
 
+            rollouts.compute_returns(next_value, USE_GAE, GAMMA, TAU)
+
             (values, action_log_probs, dist_entropy, states) = \
                 actor_critic.evaluate_actions(
                     Variable(
@@ -167,7 +169,7 @@ if __name__ == '__main__':
             advantages = Variable(rollouts.returns[:-1]) - values
             value_loss = advantages.pow(2).mean()
             if j % 100 == 0:
-                print(f'Value loss: {value_loss}')
+                print(f'Value loss: {value_loss.data}')
 
             action_loss = -(
                     Variable(advantages.data) * action_log_probs).mean()
