@@ -27,34 +27,19 @@ if __name__ == '__main__':
     obs_shape = envs.observation_space.shape
     obs_shape = (obs_shape[0] * NUM_STACK, *obs_shape[1:])
 
-    actor_critic_yellow = CNNPolicy(obs_shape[0], envs.action_space)
-    actor_critic_red = CNNPolicy(obs_shape[0], envs.action_space)
+    model_path = os.path.join(SAVE_DIR, 'a2c')
+    if len(os.listdir(model_path)) == 2:
+        actor_critic_yellow, _ = torch.load(
+            os.path.join(model_path, 'ConnectFourYellow.pt'))
+        actor_critic_red, _ = torch.load(
+            os.path.join(model_path, 'ConnectFourRed.pt'))
+    else:
+        actor_critic_yellow = CNNPolicy(obs_shape[0], envs.action_space)
+        actor_critic_red = CNNPolicy(obs_shape[0], envs.action_space)
 
     if CUDA:
         actor_critic_yellow.cuda()
         actor_critic_red.cuda()
-
-    # model_yellow = "yellow_model"
-    # model_red = "red_model"
-    # max_episode_length = s_size
-    # gamma = .99
-
-    # load_model = False
-    # if os.path.isfile(model_yellow) and os.path.isfile(model_red):
-    #     load_model = True
-
-    # global_episodes = 0
-    # if load_model:
-    #     print("Loading models from files...")
-    #     red_network = torch.load(model_red)
-    #     yellow_network = torch.load(model_yellow)
-    #     print("Loaded.")
-    # else:
-    #     red_network = Net()
-    #     yellow_network = Net()
-
-    # num_workers = multiprocessing.cpu_count()
-    # num_workers = 1
 
     optim_yellow = optim.RMSprop(actor_critic_yellow.parameters(), lr=LR,
                                  eps=EPS, alpha=ALPHA)
@@ -84,14 +69,12 @@ if __name__ == '__main__':
 
     rollouts_yellow.observations[0].copy_(current_obs)
 
-    # episode_rewards = torch.zeros([NUM_PROCESSES, 1])
-    # final_rewards = torch.zeros([NUM_PROCESSES, 1])
-
     if CUDA:
         current_obs = current_obs.cuda()
         rollouts_yellow.cuda()
         rollouts_red.cuda()
 
+    losses = []
     start = time.time()
     for j in range(int(NUM_UPDATES)):
         for step in range(NUM_STEPS):
@@ -104,9 +87,10 @@ if __name__ == '__main__':
                     rollouts = rollouts_red
 
                 value, action, action_log_prob, states = actor_critic.act(
-                    Variable(rollouts.observations[step], volatile=True),
-                    Variable(rollouts.states[step], volatile=True),
-                    Variable(rollouts.masks[step], volatile=True)
+                    Variable(rollouts.observations[step // 2],
+                             volatile=True),
+                    Variable(rollouts.states[step // 2], volatile=True),
+                    Variable(rollouts.masks[step // 2], volatile=True)
                 )
 
                 cpu_actions = action.data.squeeze(1).cpu().numpy()
@@ -129,9 +113,12 @@ if __name__ == '__main__':
                     current_obs *= masks
 
                 update_current_obs(obs)
-                rollouts.insert(step, current_obs, states.data, action.data,
-                                action_log_prob.data, value.data, reward, masks
-                                )
+                rollouts.insert(step // 2, current_obs, states.data,
+                                action.data, action_log_prob.data,
+                                value.data, reward, masks)
+
+                if step == 0:
+                    rollouts_red.observations[0].copy_(current_obs)
 
         for actor_critic, rollouts, optimizer in [(actor_critic_yellow,
                                                    rollouts_yellow,
@@ -168,11 +155,11 @@ if __name__ == '__main__':
                                                      1)
             advantages = Variable(rollouts.returns[:-1]) - values
             value_loss = advantages.pow(2).mean()
-            if j % 100 == 0:
-                print(f'Value loss: {value_loss.data}')
+            losses.append(value_loss.data[0])
 
             action_loss = -(
-                    Variable(advantages.data) * action_log_probs).mean()
+                    Variable(advantages.data) * action_log_probs
+            ).mean()
 
             optimizer.zero_grad()
             (value_loss
@@ -206,3 +193,7 @@ if __name__ == '__main__':
                            os.path.join(save_path,
                                         f"ConnectFour{'Yellow' if actor_critic == actor_critic_yellow else 'Red'}.pt")
                            )
+
+        if j % 100 == 1:
+            print(f'Value loss: {np.mean(losses)}')
+            losses.clear()

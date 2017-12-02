@@ -4,7 +4,7 @@ import torch
 from torch.autograd import Variable
 
 from ConnectFourEnvironment import ConnectFourEnvironment
-from common import SAVE_DIR, NUM_PROCESSES, NUM_STACK
+from common import SAVE_DIR, NUM_STACK
 
 env = ConnectFourEnvironment()
 model_path = os.path.join(SAVE_DIR, 'a2c', 'ConnectFourRed.pt')

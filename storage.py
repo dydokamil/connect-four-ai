@@ -110,7 +110,8 @@ class RolloutStorage(object):
                 actions_batch.append(self.actions[:, ind])
                 return_batch.append(self.returns[:-1, ind])
                 masks_batch.append(self.masks[:-1, ind])
-                old_action_log_probs_batch.append(self.action_log_probs[:, ind])
+                old_action_log_probs_batch.append(
+                    self.action_log_probs[:, ind])
                 adv_targ.append(advantages[:, ind])
 
             observations_batch = torch.cat(observations_batch, 0)
