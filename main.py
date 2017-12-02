@@ -13,7 +13,7 @@ from ConnectFourEnvironment import ConnectFourEnvironment
 from common import NUM_PROCESSES, NUM_STACK, CUDA, EPS, LR, ALPHA, \
     NUM_STEPS, NUM_FRAMES, VALUE_LOSS_COEF, ENTROPY_COEF, MAX_GRAD_NORM, \
     SAVE_DIR, SAVE_INTERVAL, USE_GAE, GAMMA, TAU
-from model import CNNPolicy
+from model import MLPPolicy
 from storage import RolloutStorage
 
 NUM_UPDATES = NUM_FRAMES // NUM_STEPS // NUM_PROCESSES
@@ -28,14 +28,14 @@ if __name__ == '__main__':
     obs_shape = (obs_shape[0] * NUM_STACK, *obs_shape[1:])
 
     model_path = os.path.join(SAVE_DIR, 'a2c')
-    if len(os.listdir(model_path)) == 2:
+    if os.path.exists(model_path) and len(os.listdir(model_path)) == 2:
         actor_critic_yellow, _ = torch.load(
             os.path.join(model_path, 'ConnectFourYellow.pt'))
         actor_critic_red, _ = torch.load(
             os.path.join(model_path, 'ConnectFourRed.pt'))
     else:
-        actor_critic_yellow = CNNPolicy(obs_shape[0], envs.action_space)
-        actor_critic_red = CNNPolicy(obs_shape[0], envs.action_space)
+        actor_critic_yellow = MLPPolicy(obs_shape[0], envs.action_space)
+        actor_critic_red = MLPPolicy(obs_shape[0], envs.action_space)
 
     if CUDA:
         actor_critic_yellow.cuda()
@@ -68,6 +68,7 @@ if __name__ == '__main__':
     update_current_obs(obs)
 
     rollouts_yellow.observations[0].copy_(current_obs)
+    rollouts_red.observations[0].copy_(current_obs)
 
     if CUDA:
         current_obs = current_obs.cuda()
@@ -78,47 +79,54 @@ if __name__ == '__main__':
     start = time.time()
     for j in range(int(NUM_UPDATES)):
         for step in range(NUM_STEPS):
-            for k in range(2):
-                if k == 0:
-                    actor_critic = actor_critic_yellow
-                    rollouts = rollouts_yellow
-                else:
-                    actor_critic = actor_critic_red
-                    rollouts = rollouts_red
+            actor_critic = actor_critic_yellow if step % 2 == 0 \
+                else actor_critic_red
 
-                value, action, action_log_prob, states = actor_critic.act(
-                    Variable(rollouts.observations[step // 2],
-                             volatile=True),
-                    Variable(rollouts.states[step // 2], volatile=True),
-                    Variable(rollouts.masks[step // 2], volatile=True)
-                )
+            value, action, action_log_prob, states = actor_critic.act(
+                Variable(rollouts_red.observations[step],
+                         volatile=True),
+                Variable(rollouts_red.states[step], volatile=True),
+                Variable(rollouts_red.masks[step], volatile=True)
+            )
 
-                cpu_actions = action.data.squeeze(1).cpu().numpy()
+            cpu_actions = action.data.squeeze(1).cpu().numpy()
 
-                obs, reward, done, info = envs.step(cpu_actions)
-                reward = torch.from_numpy(
-                    np.expand_dims(np.stack(reward), 1)
-                ).float()
+            obs, reward, done, info = envs.step(cpu_actions)
+            reward_yellow = reward.copy()
+            reward_red = reward.copy()
 
-                masks = torch.FloatTensor(
-                    [[0.] if done_ else [1.] for done_ in done]
-                )
+            if step % 2 == 0:
+                reward_red *= -1
+            else:
+                reward_yellow *= -1
 
-                if CUDA:
-                    masks = masks.cuda()
+            reward_yellow = torch.from_numpy(
+                np.expand_dims(np.stack(reward_yellow), 1)
+            ).float()
 
-                if current_obs.dim() == 4:
-                    current_obs *= masks.unsqueeze(2).unsqueeze(2)
-                else:
-                    current_obs *= masks
+            reward_red = torch.from_numpy(
+                np.expand_dims(np.stack(reward_red), 1)
+            ).float()
 
-                update_current_obs(obs)
-                rollouts.insert(step // 2, current_obs, states.data,
+            masks = torch.FloatTensor(
+                [[0.] if done_ else [1.] for done_ in done]
+            )
+
+            if CUDA:
+                masks = masks.cuda()
+
+            if current_obs.dim() == 4:
+                current_obs *= masks.unsqueeze(2).unsqueeze(2)
+            else:
+                current_obs *= masks
+
+            update_current_obs(obs)
+            rollouts_yellow.insert(step, current_obs, states.data,
+                                   action.data, action_log_prob.data,
+                                   value.data, reward_yellow, masks)
+            rollouts_red.insert(step, current_obs, states.data,
                                 action.data, action_log_prob.data,
-                                value.data, reward, masks)
-
-                if step == 0:
-                    rollouts_red.observations[0].copy_(current_obs)
+                                value.data, reward_red, masks)
 
         for actor_critic, rollouts, optimizer in [(actor_critic_yellow,
                                                    rollouts_yellow,
