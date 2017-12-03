@@ -5,7 +5,7 @@ import torch.nn as nn
 s_size = 7 * 6
 a_size = 7
 NUM_PROCESSES = 16
-NUM_STACK = 4
+NUM_STACK = 1
 CUDA = False
 LR = 7e-4
 EPS = 1e-5
@@ -13,7 +13,7 @@ ALPHA = .99
 TAU = .95
 GAMMA = .99
 USE_GAE = False
-NUM_STEPS = 5
+NUM_STEPS = 2
 NUM_FRAMES = 10e6
 VALUE_LOSS_COEF = .5
 ENTROPY_COEF = .01

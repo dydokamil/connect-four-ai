@@ -19,6 +19,7 @@ from storage import RolloutStorage
 NUM_UPDATES = NUM_FRAMES // NUM_STEPS // NUM_PROCESSES
 
 if __name__ == '__main__':
+    assert NUM_STEPS % 2 == 0
     action_shape = 1
 
     envs = [ConnectFourEnvironment for _ in range(NUM_PROCESSES)]
@@ -29,6 +30,7 @@ if __name__ == '__main__':
 
     model_path = os.path.join(SAVE_DIR, 'a2c')
     if os.path.exists(model_path) and len(os.listdir(model_path)) == 2:
+        print("Loading saved models...")
         actor_critic_yellow, _ = torch.load(
             os.path.join(model_path, 'ConnectFourYellow.pt'))
         actor_critic_red, _ = torch.load(
@@ -75,7 +77,9 @@ if __name__ == '__main__':
         rollouts_yellow.cuda()
         rollouts_red.cuda()
 
-    losses = []
+    losses_yellow = []
+    losses_red = []
+
     start = time.time()
     for j in range(int(NUM_UPDATES)):
         for step in range(NUM_STEPS):
@@ -92,12 +96,15 @@ if __name__ == '__main__':
             cpu_actions = action.data.squeeze(1).cpu().numpy()
 
             obs, reward, done, info = envs.step(cpu_actions)
+            prohibited_mask = np.where(reward == -6)
             reward_yellow = reward.copy()
             reward_red = reward.copy()
 
             if step % 2 == 0:
+                reward_red[prohibited_mask] = 0
                 reward_red *= -1
             else:
+                reward_yellow[prohibited_mask] = 0
                 reward_yellow *= -1
 
             reward_yellow = torch.from_numpy(
@@ -163,7 +170,10 @@ if __name__ == '__main__':
                                                      1)
             advantages = Variable(rollouts.returns[:-1]) - values
             value_loss = advantages.pow(2).mean()
-            losses.append(value_loss.data[0])
+            if actor_critic == actor_critic_yellow:
+                losses_yellow.append(value_loss.data[0])
+            else:
+                losses_red.append(value_loss.data[0])
 
             action_loss = -(
                     Variable(advantages.data) * action_log_probs
@@ -203,5 +213,7 @@ if __name__ == '__main__':
                            )
 
         if j % 100 == 1:
-            print(f'Value loss: {np.mean(losses)}')
-            losses.clear()
+            print(f'Value loss yellow: {np.mean(losses_yellow)}')
+            print(f'Value loss red: {np.mean(losses_red)}')
+            losses_yellow.clear()
+            losses_red.clear()
